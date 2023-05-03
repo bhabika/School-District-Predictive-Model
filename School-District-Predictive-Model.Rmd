@@ -1,0 +1,550 @@
+---
+title: "Final Project"
+author: "Bhabika Joshi"
+date: "2023-05-02"
+output:
+  html_document:
+    theme: cosmo
+    highlight: espresso
+    toc: yes
+    number_sections: yes
+  pdf_document:
+    toc: yes
+---
+
+# Introduction
+
+The categorization of school districts in the United States is important, as it can impact the funding that schools get, the number of students in these schools, and the overall resources that are provided to the districts and individual schools. Smaller areas such as rural or micropolitan districts may have higher per-pupil human capital cost (Dhaliwal & Bruno, 2021) and therefore see differences in funding levels which can have implications for policy and practice. A model that can predict type of district based on various independent variables such as disability or economic status could help lead policymakers and financial bureaucracies in investing federal funds into the districts that need the funding the most.
+
+## The Data
+
+The following data set lists various metro and micro counties in the USA and of these counties, describes average test scores for economically and non-economically disadvantaged students, % of students by race, language status, and disability diagnosis, total enrollment of students from Grades 3-8, and % of population of people with bachelors or higher, % unemployed, and % impoverished.
+
+- **Source** = The data were gathered from the Stanford Education Data Archive (SEDA). The metro/micro ID and names were gathered from the 2017-2021 Statistics of U.S. Businesses at census.gov. Information about percentage of each race in the grade and achieve data was collected from the Common Core of Data (CCD) and the EDFacts data system housed by the U.S. Department of Education (Fahle et al., 2021; Reardon et al., 2022).
+- **Sample Size** = The sample size is 933 metro and micro counties in the USA.
+- **Outcome Variable** = The outcome variable is the binary variable: metro or micro district. Metropolitan districts contain a population of 50,000 or more people, while micropolitan districts have populations less than 50,000 but more than 10,000 people (Federal Reserve System, 2023).
+- **Predictor Variables** = The predictor variables are average test scores, economic status, disability diagnosis, and language status (English Language Learner).
+- **Individual Differences** = Individual differences in the samples can be seen in a variety of ways, including disability, economic, and linguistic status.
+- **Demographics** = The demographics of the population are listed according to economic status (economically disadvantaged or not, population in poverty, etc.), disability diagnosis (identified as special education), language status (ELL), and average test scores from 3rd to 8th graders in those districts.
+
+## Research Question
+
+1. Can components derived from the SEDA data set using a PCA predict whether 3rd to 8th graders live in micropolitan or metropolitan districts in the United States?
+
+# Basics
+
+First, clear memory and bring in the packages we need.
+
+```{r}
+rm(list=ls(all=TRUE)) 
+library(tidyverse) #call in tidyverse #data science
+library(dplyr) #call in dplyr #data manipulation
+```
+
+## Call in Data
+
+```{r}
+
+data <- read_csv("LearningAnalysticsdataset.csv", show_col_types = FALSE) #Bring in the CSV file
+str(data) #Check the structure to make sure our variables are correctly identified as "character" or "numeric"
+
+```
+
+## Data Wrangling
+
+This SEDA data set has some level of data cleaning already. There are no NAs or missing data. Still, I removed the first two columns from the data set since the ID and name of the districts are not applicable for the analysis. The variable accounting for percentage of urban population in the district was also removed to avoid redundancy when creating a prediction model. All other variables were kept for the analysis. I also renamed the variables of interest in the data set so they look cleaner for our analysis.
+
+```{r}
+
+data_pca <- data[,c(3:6, 8:19)] #I only want to analyze my variables of interest
+
+#rename the variables using the dplyr package
+data_pca <- data_pca %>% rename(Average_Test_Scores = avg_test_all, Average_Scores_EcoDisadvantaged = avg_test_ecd, Average_Scores_NotEcoDisadvantaged = avg_test_nec, Metro_or_Micro = metro_or_micro, Percent_English_Language_Learner = perell, Percent_Special_Education = perspeced, Percent_NativeAmerican = pernam, Percent_Asian = perasn, Percent_Hispanic = perhsp, Percent_Black = perblk, Percent_White = perwht, Percent_EcoDisadvantaged = perecd, Total_Enrollment = totenrl, Percent_Bachelors = perbaplus, Percent_Unemployed = perunemp, Population_Poverty = perpoverty)
+
+str(data_pca)
+
+```
+
+## Check for Multicollinearity
+
+```{r}
+
+#check for multicollinearity
+
+data_corr <- data_pca[, c(1:3, 5:16)] #create a tibble of the predictor variables
+#remove metro/micro for correlation analysis
+str(data_corr) 
+
+cor(data_corr) #check correlation
+
+#no threats of multicollinearity #let's see it graphically just to make sure too
+
+```
+
+```{r}
+#install.packages("corrplot") #install the correlation package; if already installed, move to the next line
+
+library(corrplot) #call in the package #visualization for the correlation matrix
+
+cor_matrix <- abs(cor(data_corr)) #make the values absolute
+cor_matrix_2 <- cor(data_corr)
+
+corrplot(cor_matrix, 
+         type="lower",
+         tl.pos = "ld", #position of text labels #left and diagonal
+         tl.cex = .5, #size of the label
+         method="color", col=colorRampPalette(c("white","lightpink","salmon"))
+         (100),col.lim=c(0,1),
+         addCoef.col="chocolate3", #color of numbers
+         diag=FALSE,
+         tl.col="firebrick4", #color of text label
+         tl.srt=45, #numeric rotation
+         is.corr = FALSE, #if you include correlation matrix
+         order = "hclust", #order results by strength
+         number.cex = 0.5, #change size of the 
+         number.digits = 2) #number of digits after decimal
+
+```
+
+The strongest correlation is 0.86 between average test scores and average test scores for non-economically disadvantaged students. None are at or above 0.90.
+
+## Scale variables
+
+Next, let's scale the variables.
+
+```{r}
+library(psych) #toolbox for psychometric theory
+
+str(data_corr)
+
+scaled_data_pca <- data_corr %>% 
+  mutate_at(c(1:15), ~(scale(.) %>% as.vector))
+
+str(scaled_data_pca)
+psych::describe(scaled_data_pca) #gives you descriptive data like mean, SD, etc.
+
+
+```
+
+# Visualize the data
+
+In order to analyze a large number of variables, increase comprehension of the data set, and minimize data loss, I conducted a principal component analysis (PCA) (Jolliffe & Cadima, 2016).
+
+```{r}
+
+#install.packages("factoextra")
+library(factoextra) #we use this package to visualize PCA
+
+viz_pca <- prcomp(scaled_data_pca, center = TRUE,scale. = TRUE) #run the visualization
+
+
+#positive correlated variables point to the same side of the plot and negative correlated variables point to opposite sides of the graph
+
+fviz_pca_var(viz_pca,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE #Avoid overlapping text if possible 
+             )
+
+```
+
+## Bartlett's test 
+
+Next, we conduct a Bartlett’s Test of Sphericity to see if the variables are correlated. If the correlation matrix is an identity matrix, the data may not be suitable for factor analysis (Analysis INN, 2020).
+
+```{r}
+cortest.bartlett(scaled_data_pca, 933) #933 equals sample size
+
+# p value was less than .05 so r-matrix is significant and not an identity matrix
+```
+
+## KMO
+
+We conduct the Kaiser-Meyer-Olkin (KMO) Measure of Sampling Adequacy. The KMO measures the strength of the correlation with values below .5 considered unacceptable and values above .9 considered superb (Analysis INN, 2020).
+
+```{r}
+
+KMO(scaled_data_pca) #make sure everything is above .50
+
+```
+
+From this analysis, we see that 5 variables are under .50 (Percent_NativeAmerican, Percent_Hispanic, Percent_White, Percent_Asian, and Percent_Black). We remove the smallest of these variables (Percent_NativeAmerican) and run the KMO again.
+
+```{r}
+
+str(scaled_data_pca)
+
+draft_scaled_data_pca <- scaled_data_pca[, c(1:5, 7:15)]
+
+str(draft_scaled_data_pca)
+
+KMO(draft_scaled_data_pca) #make sure everything is above .50 #Percent_Asian and Percent_Black are still below 0.50 so let's remove the smaller of these two variables (Percent_Black) and run the KMO again
+
+final_scaled_data_pca <- draft_scaled_data_pca[, c(1:7, 9:14)]
+
+str(final_scaled_data_pca) #check to make sure Percent_Black is removed from the analysis
+
+KMO(final_scaled_data_pca) #everything is above .50
+
+```
+
+Overall MSA =  0.69 so we are good to move on to the next step.
+
+# PCA
+## Baseline PCA
+
+```{r}
+
+#run a base pca with the available variables after checking for KMO and Bartlett's test #here we have 10
+
+pca_base <- principal(final_scaled_data_pca, nfactors = 13, rotate = "none")
+
+pca_base #results
+
+#check to see how many SS loadings are above 1
+
+#potentialy 4 here with PC1 at 5.24, PC2 at 2.70, PC3 at 1.59, and PC4 at 1.07
+
+#conduct a scree plot using eigen values
+plot(pca_base$values, type = "b")
+
+#this visualization shows the eigenvalues (y) against the factor number (x)
+#type = 'b' indicates the plot point and line on the graph
+
+#indicates 4 variables here
+
+```
+
+## Normal Distribution
+
+Next, we will check to see that our residuals are normally distributed. 
+
+```{r}
+
+pca_resid <- principal(final_scaled_data_pca, nfactors = 4, rotate = "none")
+pca_resid 
+
+#residuals
+#we need correlation matrix
+corMatrix<-cor(final_scaled_data_pca)
+
+#next, create an object for residuals
+residuals<-factor.residuals(corMatrix, pca_resid$loadings)
+
+#call histogram to check for residuals
+hist(residuals) #looks like a pretty normal distribution with a slight right skew
+
+
+```
+
+## Final PCA
+
+Since our factors are most likely related, we will use the oblique technique (promax).
+
+```{r}
+
+pca_final <- principal(final_scaled_data_pca, nfactors = 4, rotate = "promax") #oblique
+pca_final #results
+
+print.psych(pca_final, cut = 0.3, sort = TRUE)
+
+```
+
+The SS loadings at 2.84, 2.64, 2.57, 1.92 indicate that the relationship is stronger after rotating.
+
+## Interpretation
+
+```{r}
+
+plot(pca_final)
+
+#component 1 is black
+#component 2 is blue
+#component 3 is red
+#component 4 is grey
+
+fa.diagram(pca_final)
+
+```
+
+*Here we see four components. The components can be named as following:*
+
+**Component 1**: Disadvantaged_students
+
+**Component 2**: Specialized_demographics
+
+**Component 3**: Urban_students
+
+**Component 4**: Test_scores
+
+## CSV
+
+```{r}
+
+#we need the pca scores
+pca_final_scores <- as.data.frame(pca_final$scores) #scores for each factor
+
+#rename using the component names we chose
+pca_final_scores <- pca_final_scores %>% 
+  rename(Disadvantaged_students = RC1, Specialized_demographics = RC2, Urban_students = RC3, Test_scores = RC4)
+
+#combine df
+
+str(data)
+
+final_data <- cbind(data, pca_final_scores)
+str(final_data)
+
+
+write.csv(final_data,"metromicro_pca.csv", row.names=FALSE)
+
+
+```
+
+# Machine Learning
+
+```{r}
+
+model <- read_csv("metromicro_pca.csv", show_col_types = FALSE) #Bring in the final CSV file
+str(model) #Check the structure to make sure our variables are correctly identified as "character" or "numeric"
+
+#we only want our outcome and predictor variables
+
+model_lr <- model[,c(6, 20:23)] #I only want to analyze my variables of interest
+
+#rename the variables using the dplyr package
+model_lr <- model_lr %>% rename(Metro_or_Micro = metro_or_micro)
+
+str(model_lr)
+
+```
+
+## Data Descriptives
+
+*Make sure outcome variable is binary*
+
+Outcome variable of interest is type of district (metropolitan or micropolitan). The outcome variable is binary. Students will either come from a metropolitan or micropolitan district.
+
+*Check to make sure classes are roughly balanced*
+
+```{r}
+
+library(plyr) #download the package plyr to check frequency count of each class
+count(model_lr$Metro_or_Micro) #check count of each class
+
+#there are 400 metro school districts and 533 micro school districts in the data set
+
+```
+
+Industry standard states that to be balanced, minority classes (the smaller of the class) should be at least 40% of the proportion of the data set. Here, n=400 (minority class) is over 40% of the data set (n=933). Through the following visualization and industry standard, we can claim that the classes are balanced (Google Developers, 2022).
+
+```{r} 
+
+barplot(prop.table(table(model_lr$Metro_or_Micro)),
+        col = rainbow(2),
+        ylim = c(0, 0.7),
+        main = "District Distribution") #visualization of classes
+```
+
+*Scale numeric predictor variables*
+
+```{r}
+
+model_scaled <- model_lr %>% 
+  mutate_at(c(2:5), ~(scale(.) %>% as.vector))
+  #scale all variables except the outcome variable so mean is zero and values are standardized to SD from zero
+
+str(model_scaled)
+
+psych::describe(model_scaled) #from this summary description, I see that all numeric variables have a mean of 0 and an SD of 1
+
+```
+
+**Make sure outcome variable is a factor**
+
+```{r}
+#the outcome variable label is currently numeric and it needs to be a factor
+
+model_scaled$Metro_or_Micro <- as.factor(model_scaled$Metro_or_Micro) #Metro is "1" and Micro is "2"
+
+str(model_scaled) #check structure to make sure that "label" variable is now a factor, which checks out!
+
+table(model_scaled$Metro_or_Micro) #as number of people in micro are more, we predict model will predict more students in micro districts
+
+```
+
+*The outcome variable is the type of district and the predictor variables are the four components gathered from the PCA above.*
+
+## Check for Suppression Effects
+
+```{r}
+
+model_scaled %>% 
+  group_by(Metro_or_Micro) %>% 
+  summarise_at(1:4, funs(mean, sd)) #when using the group-by function, R assumes that the tibble has only has 4 variables #get the mean and SD of each of the predictor variables based on the outcome variable binary
+
+```
+
+The difference between the two types of districts for Disadvantaged_students is .3, Specialized_demographics is .26, Test_scores is .08, and Urban_students is 1.05. This indicates that the strongest discriminator between the metro and micro districts is urban identification of students and the weakest discriminator is test scores of students.
+
+## Check for Multicollinearity
+
+*Check for multicollinearity*
+
+```{r}
+
+#check for multicollinearity
+
+model_corr <- model_scaled[, c(2:5)] #create a tibble of the predictor variables
+  
+cor(model_corr) #check correlation
+
+#no threats of multicollinearity
+
+```
+The data tables above further shows that there is no suppression effect nor multicollinearity so we can move ahead to creating a predictive model for the data set. We can see that when the correlations are ordered by strength, the strongest correlation is .57 so there is no evidence of multicollinearity (>.80) in the data.
+
+## Regression model
+
+**10 fold cross-validation**
+
+Next, we are going to use a statistical resampling procedure method called 10-fold cross validation to test the strength of our model (Brownlee, 2018). We will use the PCA data we have from our given data set to analyze how well this model can make predictions outside of this data set.
+
+```{r}
+
+library(caret) #call in the caret package #Classification And REgression Training #simplifies the creation of predictive models
+library(MASS) #call in the mass package #Modern Applied Statistics with S
+
+#set seed
+set.seed(123)
+
+# Set up repeated k-fold cross-validation
+train.control <- trainControl(method = "cv", number = 10)
+#method CV means cross validation, number is 10 because we are doing 10 fold cross-validation
+
+
+#the LM model used
+lr_cv10 <- train(Metro_or_Micro ~., #~. indicates to pull all variables after Metro_or_Micro
+                 data = model_scaled, #our dataset
+                 method="glmStepAIC", # Step wise AIC (estimator of prediction error) from maas package
+                 direction="backward",
+                 trControl = train.control,
+                 family = "binomial")
+
+
+summary(lr_cv10) #find residuals and average #Urban_students and Test_scores are significant
+
+str(lr_cv10)
+
+```
+
+**Get predicted and actual values**
+
+```{r}
+
+predicted <- unname(lr_cv10$finalModel$fitted.values) #change named vector to unname
+
+model_scaled$predicted.probabilities<-predicted #get predicted values
+
+model_scaled <- model_scaled %>% 
+  #assign 1 to Metropolitan Districts, 2 to Micropolitan Districts
+  mutate(actual = ifelse(Metro_or_Micro == "Metro", 1, 2)) %>% 
+  #assign 1 to .50 and less and 2 to anything else 
+  mutate(predicted = ifelse(predicted.probabilities < .50, 1, 2))
+
+#create factors for predicted and actual
+model_scaled$predicted <- as.factor(model_scaled$predicted)
+model_scaled$actual <- as.factor(model_scaled$actual)
+
+str(model_scaled)
+table(model_scaled$actual) #let's see our final values
+
+# create confusion matrix using the confusionMatrix function
+confusionMatrix(model_scaled$actual, model_scaled$predicted,
+                mode = "everything", 
+                positive="1") #positive values represent Metro districts
+
+```
+
+
+## Mosaic Plot
+
+```{r}
+
+#first make a table
+mosaic_table <- table(model_scaled$actual, model_scaled$predicted)
+mosaic_table #make sure everything looks good with the table
+
+```
+
+```{r}
+
+#next plot a simple mosaic
+mosaicplot(mosaic_table,
+           main = "Confusion Matrix",
+           sub = "Accuracy of Prediction",
+           xlab = "Predicted",
+           ylab = "Actual",
+           color = "lightgray",
+           border = "black")
+
+
+```
+
+*Summary of Confusion Matrix Interpretation*
+
+- True Positive: Model correctly predicted 265 cases as Metro and it was actually Metro.
+- False Positive: Model incorrectly predicted 135 cases as Metro but it was actually Micro
+- False Negative: Model incorrectly predicted 64 cases as Micro but it was actually Metro.
+- True Negative: Model correctly predicted 469 cases as Micro and it was actually Micro.
+
+The model is 79% accurate with a Kappa value of 0.5547 (we can interpret this as moderate to substantial agreement between the observed and predicted values), Precision value of 0.6625 (TP/(TP+FP)), Recall value of 0.8055 (TP/(TP+FN)), and F1 value of 0.7270 (the balanced score between recall and precision).
+
+# Discussion
+
+This study aimed to answer the following research question: Can components derived from the SEDA data set using a PCA predict whether 3rd to 8th graders live in micropolitan or metropolitan dis- tricts in the United States?
+
+# References
+[1]	Analysis Inn. (2020, May 9). KMO and Bartlett’s Test of Sphericity. Analysis Inn. https://www.analysisinn.com/post/kmo-and-bartlett-s-test-of-sphericity/
+
+[2]	Baker, B. D., Srikanth, A., Green III, P. C., & Cotto, R. (2020). School funding disparities and the plight of Latinx children. Education Policy Analysis Archives, 28, 135–. https://doi.org/10.14507/epaa.28.5282
+
+[3]	Baloglu, O., Latifi, S. Q., & Nazha, A. (2022). What is machine learning? Archives of Disease in Childhood. Ed-ucation and Practice Edition, 107(5), 386–388. https://doi.org/10.1136/archdischild-2020-319415
+
+[4]	Brownlee, J. (2018, May 23). A Gentle Introduction to k-fold Cross-Validation. Machine Learning Mastery. Re-trieved April 7, 2023, from https://machinelearningmastery.com/k-fold-cross-validation/
+
+[5]	Dhaliwal, T. K., & Bruno, P. (2021). The Rural/Nonrural Divide? K–12 District Spending and Implications of Eq-uity-Based School Funding. AERA Open, 7. https://doi.org/10.1177/2332858420982549
+
+[6]	UCLA: Statistical Consulting Group. (n.d.). Factor Varia-bles. Retrieved May 1, 2023, from https://stats.oarc.ucla.edu/r/modules/factor-variables/
+
+[7]	Fahle, E. M., Chavez, B., Kalogrides, D., Shear, B. R., Rear-don, S. F., & Ho, A. D. (2021). Stanford Education Data Archive: Technical Documentation (Version 4.1). Re-trieved from http://purl.stanford.edu/db586ns4974.
+
+[8]	Federal Reserve System (2023, April 5). Micro Data Ref-erence Manual. Data Dictionary Item Number 9153: Core Based Statistical Area Type. Retrieved April 7, 2023, from https://www.federalreserve.gov/apps/mdrm/data-dictionary
+
+[9]	Frisch, R. (1934). Statistical confluence analysis by means of complete regression systems (No. 5). Universite-tets Økonomiske Institutt.
+
+[10]	Galla, B. M., Wood, J. J., Tsukayama, E., Har, K., Chiu, A. W., & Langer, D. A. (2014). A longitudinal multilevel model analysis of the within-person and between-person effect of effortful engagement and academic self-efficacy on academic performance. Journal of School Psychology, 52(3), 295–308. https://doi.org/10.1016/j.jsp.2014.04.001
+
+[11]	Google Developers (2022, July 18). Imbalanced Data. Machine Learning. Retrieved April 5, 2023, from https://developers.google.com/machine-learning/data-prep/construct/sampling-splitting/imbalanced-data
+
+[12]	Holt, M. K., Finkelhor, D., & Kantor, G. K. (2007). Multi-ple victimization experiences of urban elementary school students: Associations with psychosocial functioning and academic performance. Child Abuse & Neglect, 31(5), 503–515. https://doi.org/10.1016/j.chiabu.2006.12.006
+
+[13]	Irgens, G. A., Adisa, I., Bailey, C., & Quesada, H. V. (2022). Designing with and for Youth: A Participatory Design Research Approach for Critical Machine Learning Education. Educational Technology & Society, 25(4), 126+. https://link-gale-com.proxy.library.vanderbilt.edu/apps/doc/A730948443/AONE?u=tel_a_vanderbilt&sid=bookmark-AONE&xid=746d6862
+
+[14]	Jolliffe, I. T., & Cadima, J. (2016). Principal component analysis: a review and recent developments. Philosophi-cal Transactions of the Royal Society of London. Series A: Mathematical, Physical, and Engineering Sciences, 374(2065), 20150202–20150202. https://doi.org/10.1098/rsta.2015.0202
+
+[15]	Mitchell, T. (1997). Machine Learning. McGraw Hill.
+
+[16]	Narkhede, S. (2018, May 9). Understanding Confusion Matrix. Towards Data Science. Retrieved May 1, 2023, from https://towardsdatascience.com/understanding-confusion-matrix-a9ad42dcfd62
+
+[17]	Ng, J. C., & Baker, B. D. (2006, Spring). Big changes in small town America: A macro level analysis of micropoli-tan schooling. Paper presented at the Annual Meeting of the American Educational Research Association, San Francisco, CA.
+
+[18]	OECD/European Commission (2020), Cities in the World: A New Perspective on Urbanisation, OECD Ur-ban Studies, OECD Publishing, Paris, https://doi.org/10.1787/d0efcbda-en.
+
+[19]	R Team (2014). R: A language and environment for statis-tical computing. R Foundation for Statistical Computing, Vienna, Austria. 2013: ISBN 3-900051-07-0.
+
+[20]	Reardon, S. F., Fahle, E. M., Ho, A. D., Shear, B. R., Ka-logrides, & Saliba, J. (2022). Stanford Education Data Ar-chive (Version SEDA2022). Retrieved from http://purl.stanford.edu/db586ns4974.
+
+[21]	Schaie, K. W. (Klaus W., & Roberts, J. (1971). School achievement of children by demographic and socioeco-nomic factors, United States [by K. Warner Schaie and Jean Roberts]. National Center for Health Statistics; [for sale by the Supt. of Docs., U.S. Govt. Print. Off., Washing-ton].
+
+[22]	The United States Census Bureau (2021). Classification of Metropolitan Areas. Metropolitan Areas. Retrieved May 1, 2023, from https://www2.census.gov/geo/pdfs/reference/GARM/Ch13GARM.pdf 
